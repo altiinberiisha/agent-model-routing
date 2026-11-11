@@ -38,6 +38,7 @@ the project's `.claude/settings.json`.
 - `agent-model-routing/SKILL.md` — the skill
 - `agent-model-routing/hooks/require_agent_model.py` — the hook
 - `scripts/` — used by `install.sh`
+- `field-notes/` — measurements behind the rules
 - `install.sh` — installs all three into a project
 
 ## Status

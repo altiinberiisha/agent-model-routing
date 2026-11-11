@@ -1,13 +1,13 @@
 ---
 name: agent-model-routing
-description: Choose the right model for every subagent before launching it, so expensive models are not spent on work a cheaper one does well. Use this EVERY time you are about to call the Agent tool, write a Workflow script, dispatch parallel agents, or run subagent-driven development or an implementation plan with subagents - even for a single agent, and even when the task seems obviously to need the session's own model. Also use it when the user asks which model a job needs, mentions agent cost or token spend, or says agents should not all share one model.
+description: Choose the right model for every subagent before launching it, so expensive models are not spent on work a cheaper one does well, and brief cheaper models so they catch what expensive ones would. Use this EVERY time you are about to call the Agent tool, write a Workflow script, dispatch parallel agents, or run subagent-driven development or an implementation plan with subagents - even for a single agent, and even when the task seems obviously to need the session's own model. Also use it when the user asks which model a job needs, mentions agent cost or token spend, or says agents should not all share one model.
 ---
 
 # Agent model routing
 
 The main session usually runs on the most capable and most expensive model. An agent launched
-without a `model` inherits it. Most delegated jobs (searching, running a command, implementing a
-task that already has a signature and a test) do not need that model, so inheriting by default
+without a `model` inherits it. Most delegated jobs (implementing a well-specified task,
+reviewing one diff, re-checking a small fix) do not need that model, so inheriting by default
 wastes the user's money without buying accuracy.
 
 So: **decide the model for each agent separately, and pass `model` explicitly on every Agent
@@ -17,99 +17,118 @@ not at all.
 ## The tiers
 
 The Agent tool accepts `haiku`, `sonnet`, `opus`, `fable` (cheapest to most expensive). These
-are aliases for the current version of each tier; a specific older version cannot be selected
-through this parameter.
+are aliases for the current version of each tier; a specific older version cannot be selected.
 
-| Model | Use it for | Examples |
-|---|---|---|
-| `haiku` | Mechanical work with one right answer and no design choices | Find where a function is used; list files matching a pattern; run the tests and report failures; fetch a page and extract a fact; rename a symbol; apply the same small edit across files |
-| `sonnet` | Well-specified building. **The default for implementation.** | Implement a plan task that gives the signature and the tests; write tests for existing code; a bug fix where the cause is known; a migration, a CRUD screen, a config file; documentation; reviewing one task's diff; exploring a codebase to answer a concrete question |
-| `opus` | Work that needs judgement, where the brief cannot spell out the answer | Debugging with an unknown cause; designing an algorithm or a detector's rules; a refactor that changes interfaces across several files; concurrency, security or money-handling code; turning a vague requirement into a design; reviewing a whole branch |
-| `fable` | The rare job where a mistake is costly and hard to spot, or `opus` has already failed | An architecture decision much later work depends on; the final review before something ships or is deployed; a problem an `opus` agent could not solve |
+| Model | Use it for |
+|---|---|
+| `haiku` | One right answer, no design choices: a search, a test run, a fact lookup, a rename. Also: **re-checking a small fix against an exact findings list**, and **a small exact fix given as a fresh agent** (one guard clause, one constant, one test). |
+| `sonnet` | **The default for building and for reviewing one task.** Implementing a task whose brief holds the decisions; writing tests; a known-cause bug fix; a CRUD screen; a container file; reviewing one task's diff (with the briefing rules below); a live verification run with stated pass criteria. |
+| `opus` | Judgement the brief cannot supply, or misses that would go unnoticed: reviewing logic where a wrong rule silently loses or duplicates data; re-reviewing a rewritten algorithm; the final whole-branch review; diagnosis with an unknown cause; design decisions later work depends on. |
+| `fable` | Rare: the final review before something handling sensitive data or money ships, or a problem `opus` could not solve. |
 
 ## How to decide
 
-Ask these in order and stop at the first that settles it.
+Ask in order; stop at the first that settles it.
 
-1. **Did the user name a model for this work?** Use it. Their instruction beats this skill.
-2. **Is there exactly one correct result, reachable by following steps?** → `haiku`.
-3. **Does the brief already contain the decisions** (file paths, signatures, expected behaviour,
-   a test to pass)? → `sonnet`. A good implementation plan exists precisely so that this is
-   true; a task from such a plan is `sonnet` work unless something below applies.
-4. **Does the agent have to make the decisions itself** (diagnose, design, weigh trade-offs)?
-   → `opus`.
-5. **Would a wrong answer be expensive and likely to go unnoticed?** → `fable`.
+1. **Did the user name a model?** Use it.
+2. **Exactly one correct result, reachable by following steps?** → `haiku`.
+3. **Does the brief already contain the decisions** (paths, signatures, behaviour, a test to
+   pass)? → `sonnet`. A good plan exists so that this is true.
+4. **Must the agent make or judge decisions itself** (diagnose, design, decide whether a rule is
+   right)? → `opus`.
+5. **Expensive, likely-unnoticed mistake with sensitive data or money?** → `fable`.
 
-Then adjust once for **verifiability**, which matters as much as difficulty:
+Then adjust once for **verifiability**: if a test or command will immediately show a mistake,
+stay or go one lower; if nothing downstream will catch it (a review, a design, a summary you
+will act on), go one higher.
 
-- If a test or a command will immediately show whether the result is right, a cheaper model is
-  safe: a failure costs one retry. Stay at the tier you picked, or go one lower.
-- If nothing will catch a mistake (a review, a research summary you will act on, a design),
-  go one tier higher. A confident wrong answer from a cheap model costs more than the tokens
-  saved, because you will build on it.
+Do not route by project importance or task length. Long, fully specified work is still `sonnet`.
 
-Do not route by how important the *project* is or how long the task is. A long, tedious,
-fully-specified task is still `sonnet` or `haiku` work. A two-line change to locking logic may
-be `opus` work.
+## Reviews: brief the reviewer before you upgrade it
+
+Field data (below) showed a `sonnet` reviewer missing or under-rating serious problems for three
+fixable reasons. Fix the brief first; it costs nothing.
+
+1. **Give the failure modes and their severity.** List the conditions the spec says must never
+   break the program (bad input, outages, duplicates, retries) and say "a violation of any of
+   these is Important, not Minor". Without this, `sonnet` found real problems but filed them as
+   Minor. With it, `sonnet` matched `opus` on database code.
+2. **Tell it to challenge the coordinator's decisions.** If the code implements decisions you
+   (the coordinating agent) made before the code existed, say so, and instruct the reviewer to
+   test those decisions against real use and report a wrong one as Important, with a concrete
+   case. Without this, `sonnet` approved code that faithfully implemented a wrong rule
+   ("it follows the controller decision"). With it, `sonnet` rejected wrong rules, with a proof
+   script. **Your own pre-dispatch decisions are the biggest single source of serious defects** —
+   treat them as unreviewed.
+3. **Give it the usage context.** Say how the code is called (how often, on what data, what
+   writes concurrently). The most valuable `sonnet` finding of the field test — a design flaw in
+   the plan itself — came from one paragraph of usage context.
+4. **For code that talks to external systems, require a live run** with numbers to report and
+   a pass criterion. Unit tests passed while the real system silently failed (a rate limit and
+   a cycle time no test simulated). `opus` discovered that on its own initiative; `sonnet` found
+   it in five minutes once the brief asked for a live run.
+
+Then choose the reviewer model:
+
+- One task, settled requirements, briefed as above → `sonnet`.
+- Logic where a wrong rule silently loses or duplicates data (detection rules, merge/dedup
+  logic, scheduling under concurrency) → `opus`, still briefed as above. Even in challenge mode
+  `opus` found more of these, and backed findings with probe scripts.
+- A re-check of a small fix against an exact findings list → `haiku`.
+- A re-check of a rewritten algorithm → `opus` (it is a new review, not a re-check).
+- The final whole-branch review → `opus` (`fable` for sensitive data or money).
+
+## Fix rounds: fresh and cheap beats resumed and expensive
+
+Resuming the original implementer keeps its context, but it also re-reads all of it: a
+one-constant fix sent to a long-running implementer cost about 150k tokens; the same size of fix
+given to a fresh `haiku` with an exact brief cost about 45k. Resume the implementer when the fix
+needs its understanding of the task; otherwise brief a fresh `haiku` (tiny, exact) or `sonnet`.
 
 ## Escalate instead of over-buying
 
-Start at the tier the rules give. If the agent's result fails its check, or it reports being
-stuck or guessing, relaunch **one tier up**, and put what was learned (the failing output, what
-was tried) in the new brief. Do not retry at the same tier more than once, and do not jump
-straight to `fable`.
-
-Starting high "to be safe" defeats the purpose. One escalation now and then is far cheaper than
-running everything a tier too high.
+Start at the tier the rules give. If a result fails its check, or the agent says it is stuck,
+relaunch **one tier up** with what was learned. Do not retry at the same tier more than once,
+and do not jump straight to `fable`. Before escalating, ask whether the brief was the problem
+(missing decision, missing usage context, missing live check) — in the field test it nearly
+always was.
 
 ## Cheaper models need better briefs
 
-A lower tier fills gaps in a brief less reliably. Compensate in the brief, not by raising the
-model: give exact file paths, the signatures or names to use, what is out of scope, and what
-"done" looks like (the command to run and the output that means success). If you cannot write
-that brief, the task is not yet `sonnet` work: either finish the thinking yourself first, or it
-belongs with `opus`.
+Give exact file paths, names and signatures to use, what is out of scope, what "done" looks like
+(the command and the output that means success), the failure modes that count as serious, and
+how the code is used. If you cannot write that brief, finish the thinking yourself or give the
+job to `opus`.
 
 ## Mechanics to remember
 
-- **Forks ignore `model`.** `subagent_type: "fork"` always runs on the parent's model. Use a
-  fork only when the agent truly needs this conversation's context; otherwise launch a fresh
-  agent with a proper brief and a chosen model.
-- **Named agent types** (for example Explore, Plan) carry a model in their own definition. An
-  explicit `model` still overrides it; set one when the default does not match the job.
-- **Workflow scripts:** apply the same per-agent choice inside the script wherever the agent
-  call accepts a model option (check the workflow-authoring skill for the current API). Do not
-  let a fan-out of many agents all inherit the session model.
+- **Forks ignore `model`** (`subagent_type: "fork"` runs on the parent's model). Prefer a fresh
+  agent with a proper brief.
+- **Named agent types** carry their own model; an explicit `model` overrides it.
+- **Workflow scripts:** choose per agent inside the script; never let a fan-out inherit.
 - **Other skills that launch agents** (subagent-driven development, parallel dispatch, code
-  review) do not choose models for you. Apply this skill to each agent they tell you to launch.
-  A typical split: implementers on `sonnet`, per-task reviewers on `sonnet`, the final
-  whole-branch review on `opus`.
+  review) do not choose models for you. Apply this skill to every agent they launch.
+- **Hand reviewers their instructions as a file** when several reviewers share them (e.g. a
+  comparison); it keeps the briefs identical and the coordinator's context small.
 - **The main session's own model is the user's choice.** This skill never changes it.
 
 ## Tell the user what you chose
 
-The user cannot see the `model` parameter, and cost is the reason this skill exists. When you
-launch agents, say in one line which model each got and why, for example:
-
-> Launching 3 agents: provider client and track buffer on sonnet (specified, test-backed);
-> go-around detector on opus (rule design); fixture download on haiku (mechanical).
-
-If you escalate, say so and say what failed.
+The user cannot see the `model` parameter. When you launch agents, say in one line which model
+each got and why. If you escalate, say so and what failed.
 
 ## Worked examples
 
-**"Find every place we call the adsb.lol API."** One right answer, steps only → `haiku`.
+- **Plan task with signature, rules and named tests** → `sonnet` implementer.
+- **Review of that task's diff, rules fixed by the plan** → `sonnet`, with the failure-mode list.
+- **Review of a detector whose thresholds and windowing you decided** → `opus`, told to
+  challenge your decisions; or `sonnet` in challenge mode if a miss would be noticed quickly.
+- **"Add one index and its test" after a review** → fresh `haiku` with the exact change.
+- **Re-check that three listed findings were fixed in a 9 KB diff** → `haiku`.
+- **A collector/integration that calls a rate-limited API** → `sonnet` reviewer whose brief
+  requires a 4-minute live run reporting request outcomes and data gaps.
+- **Final review before going public** → `opus`.
 
-**Plan task: "Implement `detect_squawk(track)`; rules and nine named tests given."** Decisions
-are in the brief, tests will catch errors → `sonnet`.
+## Field evidence
 
-**"The go-around detector fires on normal landings at Denver; find out why."** Unknown cause,
-needs diagnosis → `opus`.
-
-**"Review the whole Phase 1 branch before we deploy it publicly."** Nothing downstream catches
-a missed problem, and the cost of one is high → `opus`, or `fable` if the deployment handles
-anything sensitive.
-
-**"Summarise the licence terms of these three data providers so we can pick one."** Looks like
-simple reading, but the summary will be acted on and nothing checks it → one tier up from
-`haiku`: `sonnet`.
+See `field-notes/` in the skill's repository for the measurements behind these rules.
